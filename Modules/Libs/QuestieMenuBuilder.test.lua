@@ -2,6 +2,8 @@ dofile("setupTests.lua")
 
 describe("QuestieMenuBuilder", function()
     local QuestieMenuBuilder
+    ---@type QuestieGamepadMenu
+    local QuestieGamepadMenu
     local root
     local manager
     local saved = {}
@@ -54,6 +56,12 @@ describe("QuestieMenuBuilder", function()
             end,
             CreateRootMenuDescription = function(mixin) root.mixin = mixin return root end,
         }
+
+        QuestieGamepadMenu = QuestieLoader:ImportModule("QuestieGamepadMenu")
+        QuestieGamepadMenu.IsGamepadActive = function() return false end
+        QuestieGamepadMenu.IsOpen = function() return false end
+        QuestieGamepadMenu.Show = spy.new(function() end)
+        QuestieGamepadMenu.Close = spy.new(function() end)
 
         QuestieLoader._modules["QuestieMenuBuilder"] = nil
         dofile("Modules/Libs/QuestieMenuBuilder.lua")
@@ -189,5 +197,39 @@ describe("QuestieMenuBuilder", function()
         assert.is_true(QuestieMenuBuilder.IsOpen())
         QuestieMenuBuilder.Close()
         assert.is_true(manager.closed)
+    end)
+
+    it("should not call the menu manager's CloseMenus when no menu is open", function()
+        QuestieMenuBuilder.Close()
+
+        assert.is_nil(manager.closed)
+    end)
+
+    describe("in gamepad mode", function()
+        before_each(function()
+            QuestieGamepadMenu.IsGamepadActive = function() return true end
+            _G.MenuUtil.CreateContextMenu = spy.new(function() end)
+        end)
+
+        it("should open the gamepad menu instead of Blizzard's menu", function()
+            local entries = {{text = "A"}}
+            local anchorFrame = {}
+
+            QuestieMenuBuilder.Show(entries, anchorFrame, "TOPLEFT", "BOTTOMLEFT")
+
+            assert.spy(QuestieGamepadMenu.Show).was.called_with(entries, anchorFrame, "TOPLEFT", "BOTTOMLEFT")
+            assert.spy(_G.MenuUtil.CreateContextMenu).was.not_called()
+            assert.is_nil(manager.openedOwner)
+        end)
+
+        it("should report and close an open gamepad menu without calling the menu manager", function()
+            QuestieGamepadMenu.IsOpen = function() return true end
+
+            assert.is_true(QuestieMenuBuilder.IsOpen())
+            QuestieMenuBuilder.Close()
+
+            assert.spy(QuestieGamepadMenu.Close).was.called()
+            assert.is_nil(manager.closed)
+        end)
     end)
 end)

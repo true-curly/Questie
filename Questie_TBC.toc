@@ -116,6 +116,7 @@ Modules\Libs\WrappedText.lua
 Modules\Libs\QuestieLib.lua
 Modules\Libs\QuestieSerializer.lua
 Modules\Libs\QuestieCombatQueue.lua
+Modules\Libs\QuestieGamepadMenu.lua
 Modules\Libs\QuestieMenuBuilder.lua
 
 # Modules

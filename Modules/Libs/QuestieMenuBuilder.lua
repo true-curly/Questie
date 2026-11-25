@@ -2,6 +2,8 @@
 local QuestieMenuBuilder = QuestieLoader:CreateModule("QuestieMenuBuilder")
 ---@type TaintWatch
 local TaintWatch = QuestieLoader:ImportModule("TaintWatch")
+---@type QuestieGamepadMenu
+local QuestieGamepadMenu = QuestieLoader:ImportModule("QuestieGamepadMenu")
 
 ---@class MenuBuilderEntry
 ---@field text string?
@@ -93,6 +95,12 @@ end
 ---@param relativePoint FramePoint? Point of the anchor frame to attach to, defaults to "TOPRIGHT" (opens to the right)
 function QuestieMenuBuilder.Show(entries, anchorFrame, point, relativePoint)
     TaintWatch.Note("MenuUtil menu")
+    -- Blizzard's menu taints its gamepad code when Questie opens it in gamepad mode, see QuestieGamepadMenu
+    if QuestieGamepadMenu.IsGamepadActive() then
+        QuestieGamepadMenu.Show(entries, anchorFrame, point, relativePoint)
+        return
+    end
+
     local function generator(_, rootDescription)
         _AddEntries(rootDescription, entries)
     end
@@ -109,10 +117,17 @@ function QuestieMenuBuilder.Show(entries, anchorFrame, point, relativePoint)
 end
 
 function QuestieMenuBuilder.Close()
-    Menu.GetManager():CloseMenus()
+    if QuestieGamepadMenu.IsOpen() then
+        QuestieGamepadMenu.Close()
+    end
+    -- Only close Blizzard's menu when one is open, so gamepad mode never calls into it
+    local manager = Menu.GetManager()
+    if manager:IsAnyMenuOpen() then
+        manager:CloseMenus()
+    end
 end
 
 ---@return boolean
 function QuestieMenuBuilder.IsOpen()
-    return Menu.GetManager():IsAnyMenuOpen()
+    return QuestieGamepadMenu.IsOpen() or Menu.GetManager():IsAnyMenuOpen()
 end
