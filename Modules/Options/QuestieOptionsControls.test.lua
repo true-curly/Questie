@@ -7,6 +7,7 @@ describe("QuestieOptionsControls", function()
     local QuestieOptionsControls
     local QuestieOptionsEngine
     local ui, parent
+    local gamepadMenu, isGamepadActive
 
     ---Normalized the way QuestieOptionsLayout hands items over.
     local function Create(item)
@@ -32,6 +33,18 @@ describe("QuestieOptionsControls", function()
         QuestieOptionsEngine = QuestieLoader:ImportModule("QuestieOptionsEngine")
         QuestieOptionsEngine.RefreshStates = spy.new(function() end)
         QuestieOptionsEngine.QueueRefresh = spy.new(function() end)
+        -- Stands in for QuestieGamepadMenu, which has its own tests
+        isGamepadActive = false
+        gamepadMenu = QuestieLoader:ImportModule("QuestieGamepadMenu")
+        gamepadMenu.IsGamepadActive = function() return isGamepadActive end
+        gamepadMenu.IsOpen = function() return gamepadMenu.entries ~= nil end
+        gamepadMenu.IsOpenFrom = function(frame) return gamepadMenu.entries ~= nil and gamepadMenu.anchor == frame end
+        gamepadMenu.Show = spy.new(function(entries, anchor)
+            gamepadMenu.entries, gamepadMenu.anchor = entries, anchor
+        end)
+        gamepadMenu.Close = function()
+            gamepadMenu.entries, gamepadMenu.anchor = nil, nil
+        end
         dofile("Modules/Options/QuestieOptionsUtils.lua")
         dofile("Modules/Options/QuestieOptionsControls.lua")
         QuestieOptionsControls = QuestieLoader:ImportModule("QuestieOptionsControls")
@@ -1144,6 +1157,128 @@ describe("QuestieOptionsControls", function()
             QuestieOptionsControls.Refresh(control)
 
             assert.is_true(region.isDesaturated)
+        end)
+    end)
+
+    -- Found in the real client: picking an entry of Blizzard's menu in gamepad mode made its gamepad code call
+    -- the protected SetPreferredGamepadInteractTarget() tainted by Questie, which Forever blocks
+    describe("dropdown in gamepad mode", function()
+        local stored, control
+
+        before_each(function()
+            isGamepadActive = true
+            stored = "b"
+            control = Create({
+                type = "dropdown",
+                options = {a = "A", b = "B"},
+                get = function() return stored end,
+                set = function(key) stored = key end,
+            })
+        end)
+
+        it("should open its entries in QuestieGamepadMenu below the dropdown instead of Blizzard's menu", function()
+            control.widget:OpenMenu()
+
+            assert.spy(gamepadMenu.Show).was.called(1)
+            assert.is_false(control.widget:IsMenuOpen())
+            assert.are.equal(control.widget, gamepadMenu.anchor)
+            assert.are.equal("A", gamepadMenu.entries[1].text)
+            assert.are.equal("B", gamepadMenu.entries[2].text)
+        end)
+
+        it("should check the stored entry", function()
+            control.widget:OpenMenu()
+
+            assert.is_false(gamepadMenu.entries[1].checked())
+            assert.is_true(gamepadMenu.entries[2].checked())
+        end)
+
+        it("should store the picked entry and refresh", function()
+            control.widget:OpenMenu()
+
+            gamepadMenu.entries[1].func("LeftButton")
+
+            assert.are.equal("a", stored)
+            assert.spy(QuestieOptionsEngine.RefreshStates).was.called(1)
+        end)
+
+        it("should show the picked entry once refreshed", function()
+            control.widget:OpenMenu()
+            gamepadMenu.entries[1].func("LeftButton")
+            gamepadMenu.Close()
+
+            QuestieOptionsControls.Refresh(control)
+
+            assert.are.equal("A", control.widget:GetText())
+        end)
+
+        it("should close its menu when clicked again, like Blizzard's dropdown", function()
+            control.widget:OpenMenu()
+            control.widget:OpenMenu()
+
+            assert.is_false(gamepadMenu.IsOpen())
+        end)
+
+        it("should open its own menu when another dropdown's menu is open", function()
+            local other = Create({type = "dropdown", options = {c = "C"}})
+            other.widget:OpenMenu()
+
+            control.widget:OpenMenu()
+
+            assert.are.equal(control.widget, gamepadMenu.anchor)
+        end)
+
+        it("should not open while disabled", function()
+            local disabled = Create({type = "dropdown", options = {a = "A"}, enabled = function() return false end})
+
+            disabled.widget:OpenMenu()
+
+            assert.spy(gamepadMenu.Show).was_not.called()
+        end)
+
+        it("should not open an empty menu", function()
+            local empty = Create({type = "dropdown", options = {}})
+
+            empty.widget:OpenMenu()
+
+            assert.spy(gamepadMenu.Show).was_not.called()
+        end)
+
+        it("should close its menu when the settings hide", function()
+            control.widget:OpenMenu()
+
+            parent:Hide()
+
+            assert.is_false(gamepadMenu.IsOpen())
+        end)
+
+        it("should hide the dropdown's tooltip when the menu opens", function()
+            local withTooltip = Create({type = "dropdown", tooltip = "What it does", options = {a = "A"}})
+            withTooltip.widget.scripts.OnEnter(withTooltip.widget)
+            assert.is_true(GameTooltip:IsShown())
+
+            withTooltip.widget:OpenMenu()
+
+            assert.is_false(GameTooltip:IsShown())
+        end)
+
+        it("should not show tooltips while its menu is open, because they could cover it", function()
+            local other = Create({type = "checkbox", title = "Other", tooltip = "Other tooltip"})
+            control.widget:OpenMenu()
+
+            other.scripts.OnEnter(other)
+
+            assert.is_false(GameTooltip:IsShown())
+        end)
+
+        it("should keep the font previews of the font dropdown", function()
+            local fontControl = Create({type = "fontDropdown", fonts = {Alpha = "a.ttf"}, get = function() return "Alpha" end})
+            fontControl.widget:OpenMenu()
+            local row = {fontString = CreateFrame("FontString")}
+
+            gamepadMenu.entries[1].initializer(row)
+
+            assert.are.equal("a.ttf", row.fontString.fontObject.fontPath)
         end)
     end)
 end)

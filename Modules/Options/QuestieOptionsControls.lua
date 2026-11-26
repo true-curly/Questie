@@ -9,6 +9,8 @@ local QuestieOptionsControls = QuestieLoader:CreateModule("QuestieOptionsControl
 local QuestieOptionsEngine = QuestieLoader:ImportModule("QuestieOptionsEngine")
 ---@type QuestieOptionsUtils
 local QuestieOptionsUtils = QuestieLoader:ImportModule("QuestieOptionsUtils")
+---@type QuestieGamepadMenu
+local QuestieGamepadMenu = QuestieLoader:ImportModule("QuestieGamepadMenu")
 
 ---@class QuestieOptionsControl: Button
 ---@field itemData table Normalized item definition, see QuestieOptionsLayout
@@ -61,7 +63,7 @@ local function _ApplyTooltip(widget, item, attachPoint, x, y, childWidget)
     local function ShowTooltip()
         -- A tooltip always draws on top, so it could cover the entries of an open dropdown menu.
         -- That includes the one Blizzard's dropdown just showed, for text that doesn't fit.
-        if Menu.GetManager():GetOpenMenu() then
+        if Menu.GetManager():GetOpenMenu() or QuestieGamepadMenu.IsOpen() then
             GameTooltip:Hide()
             return
         end
@@ -474,6 +476,53 @@ end
 -- Dropdowns
 -------------------------
 
+---Stands in for Blizzard's menu description, so the same fillMenu can fill QuestieGamepadMenu's entries.
+---@param entries MenuBuilderEntry[]
+---@return table rootDescription
+local function _NewGamepadMenuDescription(entries)
+    local rootDescription = {}
+
+    -- QuestieGamepadMenu doesn't scroll, it is clamped to the screen instead
+    function rootDescription:SetScrollMode() end
+
+    function rootDescription:CreateRadio(text, isSelected, select)
+        local entry = {text = text, checked = isSelected, func = function() select() end}
+        table.insert(entries, entry)
+        return {
+            AddInitializer = function(_, initializer)
+                entry.initializer = initializer
+            end,
+        }
+    end
+
+    return rootDescription
+end
+
+---In gamepad mode, Blizzard's menu runs gamepad code when it opens and closes. Opened from a Questie dropdown,
+---that code is tainted by Questie and Forever blocks it: BugSack showed "Questie tried to call the protected function
+---SetPreferredGamepadInteractTarget()" after picking an entry. So the entries open in QuestieGamepadMenu instead.
+---@param dropdown table
+---@param fillMenu fun(rootDescription: table)
+local function _ToggleGamepadMenu(dropdown, fillMenu)
+    if QuestieGamepadMenu.IsOpenFrom(dropdown) then
+        QuestieGamepadMenu.Close()
+        return
+    end
+    if not dropdown:IsEnabled() then
+        return
+    end
+
+    local entries = {}
+    fillMenu(_NewGamepadMenuDescription(entries))
+    if #entries == 0 then
+        return
+    end
+
+    QuestieGamepadMenu.Show(entries, dropdown, "TOPLEFT", "BOTTOMLEFT")
+    -- A long menu can cover the tooltip of its own dropdown
+    GameTooltip:Hide()
+end
+
 ---Creates a dropdown with its title above it.
 ---
 ---Blizzard generates a dropdown's menu every time it is shown, only to find the text of the selected entry. With many
@@ -500,6 +549,11 @@ local function _CreateDropdownFrame(control, item, width, fillMenu, addSelectedE
     local isOpening = false
     local openMenu = dropdown.OpenMenu
     dropdown.OpenMenu = function(self)
+        if QuestieGamepadMenu.IsGamepadActive() then
+            _ToggleGamepadMenu(self, fillMenu)
+            return
+        end
+
         isOpening = true
         openMenu(self)
         isOpening = false
@@ -523,6 +577,12 @@ local function _CreateDropdownFrame(control, item, width, fillMenu, addSelectedE
     _ApplyTooltip(control, item, "ANCHOR_TOPLEFT", 0, 0, dropdown)
     -- Blizzard's tooltip for text that doesn't fit belongs to the dropdown itself
     QuestieOptionsUtils.HideTooltipOnHide(dropdown)
+    -- QuestieGamepadMenu is parented to UIParent, so it doesn't close with the settings by itself
+    dropdown:HookScript("OnHide", function(self)
+        if QuestieGamepadMenu.IsOpenFrom(self) then
+            QuestieGamepadMenu.Close()
+        end
+    end)
 end
 
 ---@param rootDescription table

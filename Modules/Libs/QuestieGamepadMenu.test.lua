@@ -30,6 +30,7 @@ describe("QuestieGamepadMenu", function()
         function region:SetText(text) self.text = text end
         function region:GetStringWidth() return #(self.text or "") * 6 end
         function region:SetTextColor(r, g, b) self.color = {r, g, b} end
+        function region:SetFontObject(font) self.fontObject = font end
         function region:SetPoint(...) self.points[#self.points + 1] = {...} end
         function region:ClearAllPoints() self.points = {} end
         function region:GetParent() return self.parent end
@@ -93,6 +94,26 @@ describe("QuestieGamepadMenu", function()
         assert.is_true(QuestieGamepadMenu.IsOpen())
         assert.are.same({"TOPLEFT", UIParent, "BOTTOMLEFT", 100, 300}, frames.QuestieGamepadMenu1.points[1])
         assert.is_true(frames.QuestieGamepadMenu1.events.GLOBAL_MOUSE_DOWN)
+    end)
+
+    it("should report which frame it was opened from", function()
+        local anchorFrame, otherFrame = MockRegion(), MockRegion()
+        QuestieGamepadMenu.Show({{text = "A"}}, anchorFrame)
+
+        assert.is_true(QuestieGamepadMenu.IsOpenFrom(anchorFrame))
+        assert.is_false(QuestieGamepadMenu.IsOpenFrom(otherFrame))
+        QuestieGamepadMenu.Close()
+        assert.is_false(QuestieGamepadMenu.IsOpenFrom(anchorFrame))
+    end)
+
+    -- The font dropdown's initializers set a preview font on the row, which a later menu reuses
+    it("should reset the font a previous menu's initializer set on a reused row", function()
+        QuestieGamepadMenu.Show({{text = "A", initializer = function(row) row.fontString:SetFontObject("Preview") end}})
+        QuestieGamepadMenu.Close()
+
+        QuestieGamepadMenu.Show({{text = "B"}})
+
+        assert.are.equal("GameFontHighlightSmall", Row(1, 1).fontString.fontObject)
     end)
 
     it("should open at the given points of the anchor frame", function()

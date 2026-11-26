@@ -241,6 +241,8 @@ local function _SetupRow(row, entry, textLeft)
 
     row:SetHeight(BUTTON_HEIGHT)
     row.divider:Hide()
+    -- Rows are reused, and an initializer of an earlier menu may have changed the font, like the font dropdown's previews
+    row.fontString:SetFontObject("GameFontHighlightSmall")
     row.fontString:SetText(_GetLabel(entry))
     row.arrow:SetShown(entry.menuList ~= nil)
     row:EnableMouse(not entry.isTitle)
@@ -352,6 +354,12 @@ end
 
 function QuestieGamepadMenu.Close()
     _Close()
+end
+
+---@param anchorFrame Frame
+---@return boolean
+function QuestieGamepadMenu.IsOpenFrom(anchorFrame)
+    return QuestieGamepadMenu.IsOpen() and menuAnchor == anchorFrame
 end
 
 ---@return boolean
